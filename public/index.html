@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prometheus Metrics Visualizer</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { width: 80%; margin: 20px auto; }
+        select { padding: 10px; width: 100%; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        table, th, td { border: 1px solid #ddd; padding: 10px; }
+        #jsonDisplay {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 5px;
+            margin-top: 20px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: monospace;
+            overflow-x: auto;
+            max-height: 400px;
+            border: 1px solid #ccc;
+        }
+    </style>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Prometheus Metrics Visualizer</h1>
+
+        <!-- Dropdown to select metrics -->
+        <select id="metricsDropdown">
+            <option value="">Select a metric...</option>
+        </select>
+
+        <!-- Container for the chart -->
+        <canvas id="metricChart" width="400" height="200"></canvas>
+
+        <!-- Table to display raw metric data -->
+        <div id="chartContainer">
+            <h2>Metric Data</h2>
+            <table id="metricTable">
+                <thead>
+                    <tr>
+                        <th>Instance</th>
+                        <th>Job</th>
+                        <th>Value</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <!-- Non-editable code block to display JSON query results -->
+        <h2>Raw Data</h2>
+        <div id="jsonDisplay">
+            <!-- JSON data will be displayed here -->
+        </div>
+    </div>
+
+    <script>
+        let chart;
+
+        // Function to populate the dropdown with available metrics
+        async function fetchMetrics() {
+            const response = await fetch('/api/metrics');
+            const data = await response.json();
+            const metricsDropdown = document.getElementById('metricsDropdown');
+
+            if (data.status === 'success') {
+                data.data.forEach(metric => {
+                    const option = document.createElement('option');
+                    option.value = metric;
+                    option.textContent = metric;
+                    metricsDropdown.appendChild(option);
+                });
+            }
+        }
+
+        // Function to fetch data for the selected metric
+        async function fetchMetricData(query) {
+            const response = await fetch(`/api/query?query=${encodeURIComponent(query)}`);
+            const data = await response.json();
+            const tableBody = document.querySelector('#metricTable tbody');
+            // Clear the table for new data
+            tableBody.innerHTML = '';
+
+            // Prepare data for the chart
+            let labels = [];
+            let values = [];
+
+            if (data.status === 'success') {
+                data.data.result.forEach(item => {
+                    const instance = item.metric.instance || 'N/A';
+                    const job = item.metric.job || 'N/A';
+                    // Metric value (string, ensure precision)
+                    const value = item.value[1];
+
+                    // Fill table with data
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${instance}</td>
+                        <td>${job}</td>
+                        <td>${value}</td>
+                    `;
+                    tableBody.appendChild(row);
+
+                    // Prepare data for chart with exact values
+                    labels.push(`${instance} (${job})`);
+                    values.push(value);
+                });
+
+                // Update chart with new data
+                updateChart(labels, values, query);
+
+                // Display the JSON data in the non-editable code block
+                document.getElementById('jsonDisplay').textContent = JSON.stringify(data, null, 2);
+            }
+        }
+
+        // Function to update the chart with new data
+        function updateChart(labels, dataPoints, query) {
+            const ctx = document.getElementById('metricChart').getContext('2d');
+
+            // Destroy previous chart if it exists
+            if (chart) {
+                chart.destroy();
+            }
+
+            // Create a new chart
+            chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: query,
+                        // Preserve data as strings for precision
+                        data: dataPoints.map(String),
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    // use strings for precision
+                                    return value.toString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Event listener for when a metric is selected
+        document.getElementById('metricsDropdown').addEventListener('change', function() {
+            const selectedMetric = this.value;
+            if (selectedMetric) {
+                fetchMetricData(selectedMetric);
+            }
+        });
+
+        // Fetch all metrics on page load
+        fetchMetrics();
+    </script>
+</body>
+</html>
