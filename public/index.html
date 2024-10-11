@@ -33,6 +33,8 @@
         <!-- Dropdown to select metrics -->
         <select id="metricsDropdown">
             <option value="">Select a metric...</option>
+            <!-- Existing metric options will be populated dynamically -->
+            <option value="messageLatency">Message Latency</option>
         </select>
 
         <!-- Container for the chart -->
@@ -81,42 +83,68 @@
 
         // Function to fetch data for the selected metric
         async function fetchMetricData(query) {
-            const response = await fetch(`/api/query?query=${encodeURIComponent(query)}`);
-            const data = await response.json();
-            const tableBody = document.querySelector('#metricTable tbody');
-            // Clear the table for new data
-            tableBody.innerHTML = '';
+            if (query === 'messageLatency') {
+                // Special case: Calculate message latency
+                const response = await fetch(`/api/query?latency=true`);
+                const data = await response.json();
+                const tableBody = document.querySelector('#metricTable tbody');
+                tableBody.innerHTML = '';
 
-            // Prepare data for the chart
-            let labels = [];
-            let values = [];
+                let labels = [];
+                let values = [];
 
-            if (data.status === 'success') {
-                data.data.result.forEach(item => {
-                    const instance = item.metric.instance || 'N/A';
-                    const job = item.metric.job || 'N/A';
-                    // Metric value (string, ensure precision)
-                    const value = item.value[1];
+                if (data.status === 'success') {
+                    data.data.forEach(item => {
+                        const instance = item.instance || 'N/A';
+                        const job = item.job || 'N/A';
+                        const latency = item.latency !== null ? item.latency.toFixed(3) : 'N/A';
 
-                    // Fill table with data
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>${instance}</td>
-                        <td>${job}</td>
-                        <td>${value}</td>
-                    `;
-                    tableBody.appendChild(row);
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${instance}</td>
+                            <td>${job}</td>
+                            <td>${latency} sec</td>
+                        `;
+                        tableBody.appendChild(row);
 
-                    // Prepare data for chart with exact values
-                    labels.push(`${instance} (${job})`);
-                    values.push(value);
-                });
+                        labels.push(`${instance} (${job})`);
+                        values.push(latency);
+                    });
 
-                // Update chart with new data
-                updateChart(labels, values, query);
+                    updateChart(labels, values, 'Message Latency');
+                    document.getElementById('jsonDisplay').textContent = JSON.stringify(data, null, 2);
+                }
+            } else {
+                // Default behavior: Fetch metric data based on the selected query
+                const response = await fetch(`/api/query?query=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                const tableBody = document.querySelector('#metricTable tbody');
+                tableBody.innerHTML = '';
 
-                // Display the JSON data in the non-editable code block
-                document.getElementById('jsonDisplay').textContent = JSON.stringify(data, null, 2);
+                let labels = [];
+                let values = [];
+
+                if (data.status === 'success') {
+                    data.data.result.forEach(item => {
+                        const instance = item.metric.instance || 'N/A';
+                        const job = item.metric.job || 'N/A';
+                        const value = item.value[1];
+
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${instance}</td>
+                            <td>${job}</td>
+                            <td>${value}</td>
+                        `;
+                        tableBody.appendChild(row);
+
+                        labels.push(`${instance} (${job})`);
+                        values.push(value);
+                    });
+
+                    updateChart(labels, values, query);
+                    document.getElementById('jsonDisplay').textContent = JSON.stringify(data, null, 2);
+                }
             }
         }
 

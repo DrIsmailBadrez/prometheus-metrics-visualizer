@@ -19,24 +19,85 @@ app.get('/api/metrics', async (req, res) => {
 });
 
 // Endpoint to fetch data for a specific metric
+// Endpoint to fetch data for a specific metric with optional latency calculation
 app.get('/api/query', async (req, res) => {
-    const query = req.query.query;
-    if (!query) {
-        return res.status(400).send('Query parameter is required');
-    }
-    try {
-        const response = await axios.get(`http://${config.ENDPOINT}:${config.PROMETHEUS_PORT}/api/v1/query`, {
-            params: {
-                query: query
+    const isLatencyQuery = req.query.latency === 'true';
+
+    if (isLatencyQuery) {
+        // Handle message latency query
+        const querySent = 'messageSentTimestamp';
+        const queryReceived = 'messageReceivedTimestamp';
+
+        try {
+            // Fetch messageSentTimestamp data
+            const sentResponse = await axios.get(`http://${config.ENDPOINT}:${config.PROMETHEUS_PORT}/api/v1/query`, {
+                params: { query: querySent }
+            });
+            // console.log('sentResponse: ', sentResponse.data.data.result);
+            // Fetch messageReceivedTimestamp data
+            const receivedResponse = await axios.get(`http://${config.ENDPOINT}:${config.PROMETHEUS_PORT}/api/v1/query`, {
+                params: { query: queryReceived }
+            });
+            // console.log('receivedResponse: ', receivedResponse.data.data.result);
+
+            if (sentResponse.data.status !== 'success' || receivedResponse.data.status !== 'success') {
+                return res.status(500).send('Error fetching query data');
             }
-        });
-        // metric data is available at .data
-        res.json(response.data);
-    } catch (error) {
-        console.error(`Error fetching data for query ${query}:`, error);
-        res.status(500).send('Error fetching query data');
+
+            // Create a map for sent timestamps keyed by hash
+            const sentTimestamps = new Map();
+            sentResponse.data.data.result.forEach(item => {
+                console.log(item.value);
+                sentTimestamps.set(item.metric.hash, parseFloat(item.value[0]));
+            });
+
+            // Prepare the response array with latency calculations
+            const resultWithLatency = receivedResponse.data.data.result.map(item => {
+                const receivedTime = parseFloat(item.value[0]);
+                const hash = item.metric.hash;
+                const sentTime = sentTimestamps.get(hash);
+                const latency = sentTime ? receivedTime - sentTime : null; // Calculate latency
+
+                return {
+                    instance: item.metric.instance || 'N/A',
+                    job: item.metric.job || 'N/A',
+                    hash: hash,
+                    sentTimestamp: sentTime,
+                    receivedTimestamp: receivedTime,
+                    latency: latency // Add latency field
+                };
+            });
+
+            res.json({
+                status: 'success',
+                data: resultWithLatency
+            });
+
+        } catch (error) {
+            console.error('Error fetching data for query:', error);
+            res.status(500).send('Error fetching query data');
+        }
+    } else {
+        // Default behavior: fetch specific metric data
+        const query = req.query.query;
+        if (!query) {
+            return res.status(400).send('Query parameter is required');
+        }
+
+        try {
+            const response = await axios.get(`http://${config.ENDPOINT}:${config.PROMETHEUS_PORT}/api/v1/query`, {
+                params: {
+                    query: query
+                }
+            });
+            res.json(response.data);
+        } catch (error) {
+            console.error(`Error fetching data for query ${query}:`, error);
+            res.status(500).send('Error fetching query data');
+        }
     }
 });
+
 
 // Start server
 app.listen(config.PORT, () => {
