@@ -48,15 +48,17 @@ app.get('/api/query', async (req, res) => {
             const sentTimestamps = new Map();
             sentResponse.data.data.result.forEach(item => {
                 console.log(item.value);
-                sentTimestamps.set(item.metric.hash, parseFloat(item.value[0]));
+                sentTimestamps.set(item.metric.hash, parseFloat(item.value[1]));
             });
 
             // Prepare the response array with latency calculations
             const resultWithLatency = receivedResponse.data.data.result.map(item => {
-                const receivedTime = parseFloat(item.value[0]);
+                const receivedTime = parseFloat(item.value[1]);
                 const hash = item.metric.hash;
                 const sentTime = sentTimestamps.get(hash);
-                const latency = sentTime ? receivedTime - sentTime : null; // Calculate latency
+                const latency = sentTime && receivedTime
+                ? Math.abs(receivedTime - sentTime) / 1_000_000_000
+                : null;
 
                 return {
                     instance: item.metric.instance || 'N/A',
